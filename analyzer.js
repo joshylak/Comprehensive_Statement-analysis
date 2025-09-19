@@ -1,10 +1,9 @@
-import { GoogleGenerativeAI } from '@google/generative-ai';
 import fs from 'fs/promises';
 
 class BankStatementAnalyzer {
   constructor() {
-    this.genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-    this.model = this.genAI.getGenerativeModel({ model: 'gemini-1.5-pro' });
+    this.apiKey = process.env.GEMINI_API_KEY;
+    this.apiUrl = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent';
   }
 
   async analyzeStatement(statementData) {
@@ -436,14 +435,44 @@ Return analysis in this exact JSON format with ALL fields populated. DO NOT incl
       try {
         console.log(`🔄 API attempt ${attempt}/${maxRetries}`);
         
-        const result = await this.model.generateContent(prompt);
+        const response = await fetch(`${this.apiUrl}?key=${this.apiKey}`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            contents: [{
+              parts: [{ text: prompt }]
+            }],
+            generationConfig: {
+              temperature: 0.1,
+              topK: 1,
+              topP: 1,
+              maxOutputTokens: 8192,
+            }
+          })
+        });
         
-        if (!result.response || !result.response.candidates || !result.response.candidates[0]) {
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
+        const result = await response.json();
+        
+        if (!result.candidates || !result.candidates[0] || !result.candidates[0].content) {
           throw new Error('Invalid response structure from Gemini API');
         }
         
         console.log(`✅ API call successful on attempt ${attempt}`);
-        return result;
+        return {
+          response: {
+            candidates: [{
+              content: {
+                parts: [{ text: result.candidates[0].content.parts[0].text }]
+              }
+            }]
+          }
+        };
         
       } catch (error) {
         console.error(`❌ API attempt ${attempt} failed: ${error.message}`);
@@ -453,7 +482,7 @@ Return analysis in this exact JSON format with ALL fields populated. DO NOT incl
           throw new Error(`Gemini API failed after ${maxRetries} attempts: ${error.message}`);
         }
         
-        const delay = Math.pow(2, attempt) * 1000; // Exponential backoff
+        const delay = Math.pow(2, attempt) * 1000;
         console.log(`⏳ Waiting ${delay}ms before retry...`);
         await new Promise(resolve => setTimeout(resolve, delay));
       }
