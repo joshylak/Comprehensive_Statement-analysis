@@ -1,0 +1,10 @@
+node_modules/
+.env
+*.json
+*.pdf
+uploads/
+reports/
+!package.json
+!example-statement.json
+analysis-output.json
+comprehensive-report.html

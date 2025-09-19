@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Bank Statement Analyzer</title>
+</head>
+<body>
+    <h1>Upload Bank Statement PDF</h1>
+    <form action="/analyze-statement" method="post" enctype="multipart/form-data">
+        <input type="file" name="statement" accept=".pdf" required>
+        <button type="submit">Analyze Statement</button>
+    </form>
+    
+    <h2>With Report Generation</h2>
+    <form action="/analyze-and-report" method="post" enctype="multipart/form-data">
+        <input type="file" name="statement" accept=".pdf" required>
+        <button type="submit">Analyze & Generate Report</button>
+    </form>
+</body>
+</html>
