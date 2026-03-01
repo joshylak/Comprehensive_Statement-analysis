@@ -1,65 +1,69 @@
 import pdfplumber
 import csv
 import sys
+import os
 
 def pdf_to_csv(pdf_path, output_path=None):
-    result = []
-    
-    with pdfplumber.open(pdf_path) as pdf:
-        for page in pdf.pages:
-            # Get table areas to exclude from text extraction
-            tables = page.extract_tables()
-            table_bboxes = []
+    """Extract text from PDF and save to CSV format"""
+    try:
+        if not os.path.exists(pdf_path):
+            print(f"Error: PDF file not found: {pdf_path}")
+            return False
             
-            if tables:
-                # Find table boundaries
-                for table in page.find_tables():
-                    table_bboxes.append(table.bbox)
+        result = []
+        
+        with pdfplumber.open(pdf_path) as pdf:
+            print(f"Processing PDF with {len(pdf.pages)} pages...")
             
-            # Extract text outside of tables
-            page_lines = []
-            lines = {}
-            
-            for char in page.chars:
-                # Skip characters that are inside table areas
-                in_table = False
-                for bbox in table_bboxes:
-                    if (bbox[0] <= char['x0'] <= bbox[2] and 
-                        bbox[1] <= char['top'] <= bbox[3]):
-                        in_table = True
-                        break
+            for page_num, page in enumerate(pdf.pages, 1):
+                print(f"Processing page {page_num}...")
                 
-                if not in_table:
-                    y = round(char['top'])
-                    if y not in lines:
-                        lines[y] = []
-                    lines[y].append((char['x0'], char['text']))
-            
-            # Process non-table text
-            for y in sorted(lines.keys()):
-                line_chars = sorted(lines[y], key=lambda x: x[0])
-                line_text = ''.join([char[1] for char in line_chars]).strip()
-                if line_text:
-                    page_lines.append(line_text)
-            
-            # Add table data
-            if tables:
-                for table in tables:
-                    for row in table:
-                        if row and any(cell for cell in row if cell):
-                            row_text = " | ".join([cell.strip() if cell else "" for cell in row])
-                            page_lines.append(row_text)
-            
-            result.append(page_lines)
-    
-    if output_path:
+                # Extract all text from the page
+                page_text = page.extract_text()
+                
+                if page_text:
+                    # Split into lines and clean up
+                    lines = page_text.split('\n')
+                    for line in lines:
+                        line = line.strip()
+                        if line:  # Only add non-empty lines
+                            result.append(line)
+                
+                # Also try to extract tables
+                try:
+                    tables = page.extract_tables()
+                    if tables:
+                        print(f"Found {len(tables)} tables on page {page_num}")
+                        for table in tables:
+                            for row in table:
+                                if row and any(cell for cell in row if cell and cell.strip()):
+                                    # Join non-empty cells with separator
+                                    row_text = " | ".join([str(cell).strip() for cell in row if cell and str(cell).strip()])
+                                    if row_text:
+                                        result.append(row_text)
+                except Exception as table_error:
+                    print(f"Warning: Could not extract tables from page {page_num}: {table_error}")
+        
+        if not result:
+            print("Warning: No text extracted from PDF")
+            return False
+        
+        # Set output path if not provided
+        if not output_path:
+            output_path = pdf_path.replace('.pdf', '.csv')
+        
+        # Write to CSV
         with open(output_path, 'w', newline='', encoding='utf-8') as f:
             writer = csv.writer(f)
-            for page_lines in result:
-                for line in page_lines:
-                    writer.writerow([line])
-    
-    return result
+            for line in result:
+                writer.writerow([line])
+        
+        print(f"Successfully extracted {len(result)} lines to {output_path}")
+        return True
+        
+    except Exception as e:
+        print(f"Error processing PDF: {e}")
+        return False
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
@@ -69,8 +73,5 @@ if __name__ == "__main__":
     pdf_file = sys.argv[1]
     output_file = sys.argv[2] if len(sys.argv) > 2 else pdf_file.replace('.pdf', '.csv')
     
-    try:
-        pdf_to_csv(pdf_file, output_file)
-        print(f"Successfully converted {pdf_file} to {output_file}")
-    except Exception as e:
-        print(f"Error: {e}")
+    success = pdf_to_csv(pdf_file, output_file)
+    sys.exit(0 if success else 1)

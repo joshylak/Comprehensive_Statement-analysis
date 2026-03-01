@@ -571,7 +571,7 @@ Return analysis in this exact JSON format with ALL fields populated. DO NOT incl
       const path = await import('path');
       
       return new Promise((resolve, reject) => {
-        const pythonScript = path.join(process.cwd(), 'intelli-parser', 'pdf_to_json.py');
+        const pythonScript = path.join(process.cwd(), 'intelli-parser', 'bulletproof_parser.py');
         console.log(`🐍 Executing Python script: ${pythonScript}`);
         
         const python = spawn('python', [pythonScript, pdfPath]);
@@ -591,7 +591,7 @@ Return analysis in this exact JSON format with ALL fields populated. DO NOT incl
           console.log(`⚠️ Python stderr: ${message.trim()}`);
         });
         
-        python.on('close', (code) => {
+        python.on('close', async (code) => {
           console.log(`🏁 Python process completed with exit code: ${code}`);
           
           if (code === 0) {
@@ -599,28 +599,30 @@ Return analysis in this exact JSON format with ALL fields populated. DO NOT incl
             const csvPath = pdfPath.replace('.pdf', '.csv');
             console.log(`📊 Reading CSV file: ${csvPath}`);
             
-            fs.readFile(csvPath, 'utf8')
-              .then(csvData => {
-                console.log(`📈 CSV file read successfully, ${csvData.length} characters`);
-                
-                // Clean up CSV file
-                fs.unlink(csvPath).catch(() => {});
-                console.log('🗑️ Temporary CSV file cleaned up');
-                
-                // Convert CSV to readable text format
-                const lines = csvData.split('\n').filter(line => line.trim());
-                const text = lines.map(line => line.replace(/^"|"$/g, '').replace(/""/g, '"')).join('\n');
-                
-                console.log(`📝 Extracted ${lines.length} lines of text data`);
-                console.log(`📏 Total text length: ${text.length} characters`);
-                console.log('✅ STEP 1 COMPLETED: PDF successfully converted to structured text');
-                
-                resolve(text);
-              })
-              .catch(err => {
-                console.error('❌ Failed to read CSV file:', err.message);
-                reject(err);
-              });
+            try {
+              const csvData = await fs.readFile(csvPath, 'utf8');
+              console.log(`📈 CSV file read successfully, ${csvData.length} characters`);
+              
+              // Save copy to conversion-results folder
+              await this.saveConversionResult(pdfPath, csvData);
+              
+              // Clean up original CSV file
+              await fs.unlink(csvPath).catch(() => {});
+              console.log('🗑️ Temporary CSV file cleaned up');
+              
+              // Convert CSV to readable text format
+              const lines = csvData.split('\n').filter(line => line.trim());
+              const text = lines.map(line => line.replace(/^"|"$/g, '').replace(/""/g, '"')).join('\n');
+              
+              console.log(`📝 Extracted ${lines.length} lines of text data`);
+              console.log(`📏 Total text length: ${text.length} characters`);
+              console.log('✅ STEP 1 COMPLETED: PDF successfully converted to structured text');
+              
+              resolve(text);
+            } catch (err) {
+              console.error('❌ Failed to read CSV file:', err.message);
+              reject(err);
+            }
           } else {
             console.error(`❌ Python parser failed with code ${code}`);
             console.error(`❌ Error details: ${error}`);
@@ -631,6 +633,20 @@ Return analysis in this exact JSON format with ALL fields populated. DO NOT incl
     } catch (error) {
       console.error('❌ STEP 1 FAILED: Python parser extraction error:', error.message);
       return 'Python parser extraction failed. Please check the PDF file.';
+    }
+  }
+
+  async saveConversionResult(originalPdfPath, csvData) {
+    try {
+      const path = await import('path');
+      const filename = path.basename(originalPdfPath, '.pdf');
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+      const outputPath = path.join(process.cwd(), 'conversion-results', `${filename}_${timestamp}.csv`);
+      
+      await fs.writeFile(outputPath, csvData);
+      console.log(`💾 Conversion result saved: ${outputPath}`);
+    } catch (error) {
+      console.error('⚠️ Failed to save conversion result:', error.message);
     }
   }
 
